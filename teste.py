@@ -168,7 +168,7 @@ for penalty_type in penalty_types:
         fitness_results = []
         execution_times = []
 
-        for i in range(10):
+        for i in range(25):
             np.random.seed(i)
             start_time = time.time()
             if penalty_type == 'barrier':
@@ -192,7 +192,6 @@ for penalty_type in penalty_types:
                 # Substitui np.inf por um valor grande para visualização
                 y_values = [val if val != np.inf else 1e10 for val in fitness]
                 x_values = np.arange(len(y_values)) * pop_size # Ajusta o eixo x
-                plt.plot(x_values, y_values, label=f'Seed {i+1}')
 
             # Adiciona a linha horizontal somente para penalização por barreira
             if penalty_type == 'barrier':
