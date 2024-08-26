@@ -80,7 +80,6 @@ def evaluate_population_with_barrier(population, constraint_func):
             feasible_solutions.append(i)  # Armazena índices de soluções viáveis
         else:
             fitness[i] = np.inf  # Penalizar soluções inviáveis com um fitness infinito
-    # Se não houver soluções viáveis, permita apenas o melhor resultado não viável
     if not feasible_solutions:
         min_fitness_idx = np.argmin(fitness)
         fitness[min_fitness_idx] = np.inf  # Penaliza a solução não viável com fitness infinito
@@ -101,10 +100,8 @@ def evaluate_population_with_dynamic_penalty(population, constraint_func):
                 best_feasible_fitness = current_fitness
                 found_feasible_solution = True
         else:
-            # Se uma solução viável não foi encontrada, aplica uma penalidade
             penalty = sum(max(0, -a) for a in constraints)
             fitness[i] = objective_function(sol) + abs(penalty) + 2200
-            # Se uma solução viável já foi encontrada, não permitir que soluções inviáveis sejam melhores
             if found_feasible_solution:
                 fitness[i] = max(fitness[i], best_feasible_fitness)
     return fitness
@@ -119,8 +116,6 @@ def genetic_algorithm(num_generations, pop_size, num_variables, min_val, max_val
     population = initialize_population(pop_size, num_variables, min_val, max_val)
     best_fitness = []
     best_solutions = []
-    all_solutions = []
-    all_fitness = []
     
     for _ in range(num_generations):
         if penalty_type == 'barrier':
@@ -131,17 +126,18 @@ def genetic_algorithm(num_generations, pop_size, num_variables, min_val, max_val
             raise ValueError("Invalid penalty type. Choose 'barrier' or 'dynamic'.")
 
         best_individual, best_fitness_value = find_best_individual(population, fitness)
-        best_fitness.append(best_fitness_value)
+        if not best_fitness or best_fitness_value < best_fitness[-1]:
+            best_fitness.append(best_fitness_value)
+        else:
+            best_fitness.append(best_fitness[-1])
+            
         best_solutions.append(best_individual)
-        for i in range(pop_size):
-            all_solutions.append(population[i])
-            all_fitness.append(fitness[i])
         parents = select_parents(population, fitness, tournament_size)
         children = crossover(parents, crossover_rate)
         mutated_children = mutate(children, mutation_rate, min_val, max_val)
         population = mutated_children
     
-    return best_fitness, best_solutions, all_fitness, all_solutions
+    return best_fitness, best_solutions
 
 # Parâmetros do algoritmo genético
 num_generations = [100,1000,10000]
@@ -163,57 +159,52 @@ results = []
 # Execução do algoritmo genético com ambas as penalizações
 penalty_types = ['barrier', 'dynamic']
 for penalty_type in penalty_types:
-    feasible_solutions_count = 0
     for num_g in num_generations:
         fitness_results = []
         execution_times = []
 
-        for i in range(10):
+        for i in range(25):
             np.random.seed(i)
             start_time = time.time()
-            if penalty_type == 'barrier':
-                best_fitness, best_solutions, all_fitness, all_solutions = genetic_algorithm(
-                    num_g, pop_size, num_variables, min_val, max_val, crossover_rate, mutation_rate, tournament_size, penalty_type='barrier'
-                )
-            elif penalty_type == 'dynamic':
-                best_fitness, best_solutions, all_fitness, all_solutions = genetic_algorithm(
-                    num_g, pop_size, num_variables, min_val, max_val, crossover_rate, mutation_rate, tournament_size, penalty_type='dynamic'
-                )
-            else:
-                raise ValueError("Invalid penalty type. Choose 'barrier' or 'dynamic'.")
-
+            best_fitness, best_solutions = genetic_algorithm(
+                num_g, pop_size, num_variables, min_val, max_val, crossover_rate, mutation_rate, tournament_size, penalty_type
+            )
             execution_time = time.time() - start_time
             execution_times.append(execution_time)
             fitness_results.append(best_fitness)
-            # Gráficos de convergência
-            plt.figure(figsize=(10, 6))
-            num_iterations = pop_size * num_g
-            for i, fitness in enumerate(fitness_results):
-                # Substitui np.inf por um valor grande para visualização
-                y_values = [val if val != np.inf else 1e10 for val in fitness]
-                x_values = np.arange(len(y_values)) * pop_size # Ajusta o eixo x
-                plt.plot(x_values, y_values, label=f'Seed {i+1}')
-
-            # Adiciona a linha horizontal somente para penalização por barreira
-            if penalty_type == 'barrier':
-                plt.axhline(y=1e10, color='r', linestyle='--', label='Penalização Infinita')
-
-            plt.xlabel('Iterações')
-            plt.ylabel('Fitness')
-            plt.title(f'Convergência - Penalização {penalty_type.capitalize()}')
-            plt.legend()
-            plt.grid(True)
-            plt.savefig(f"{output_dir}/convergence_{penalty_type}_{num_g}.png")
-            plt.close()
-
-
-
-        # Salvando os resultados
-        avg_fitness = np.mean([f[-1] for f in fitness_results])
-        best_avg_fitness = np.mean([f[0] for f in fitness_results])
+        
+        # Cálculos das métricas
+        best_final_fitness = [f[-1] for f in fitness_results]
+        avg_fitness = np.mean(best_final_fitness)
+        best_fitness = np.min(best_final_fitness)
+        worst_fitness = np.max(best_final_fitness)
+        std_fitness = np.std(best_final_fitness)
         avg_time = np.mean(execution_times)
-        results.append([penalty_type, num_g, avg_fitness, best_avg_fitness, avg_time, feasible_solutions_count])
 
-# Criando o DataFrame de resultados
-df_results = pd.DataFrame(results, columns=['Penalização', 'Gerações', 'Fitness Médio', 'Melhor Fitness', 'Tempo Médio', 'Soluções Viáveis'])
-df_results.to_excel(f"{output_dir}/results.xlsx", index=False)
+        results.append([penalty_type, num_g, avg_fitness, best_fitness, worst_fitness, std_fitness, avg_time])
+
+        # Gráficos de convergência
+        plt.figure(figsize=(10, 6))
+        num_iterations = pop_size * num_g
+        for i, fitness in enumerate(fitness_results):
+            y_values = [val if val != np.inf else 1e10 for val in fitness]
+            x_values = np.arange(len(y_values)) * pop_size
+            plt.plot(x_values, y_values)
+
+        if penalty_type == 'barrier':
+            plt.axhline(y=1e10, color='r', linestyle='--', label='Penalização Infinita')
+
+        plt.xlabel('Iterações')
+        plt.ylabel('Fitness')
+        plt.title(f'Convergência - Penalização: {penalty_type}, Gerações: {num_g}')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(f"{output_dir}/convergence_{penalty_type}_{num_g}.png")
+        plt.close()
+
+# Criação da tabela de resultados
+columns = ['Penalização', 'Gerações', 'Média', 'Melhor', 'Pior', 'Desvio Padrão', 'Tempo Médio']
+results_df = pd.DataFrame(results, columns=columns)
+
+# Salvando a tabela em formato Excel
+results_df.to_excel(f"{output_dir}/resultados_genetico.xlsx", index=False)
